@@ -13,6 +13,9 @@ struct dmp_c {
 	struct dmp_stats *stats; // per device stats
 };
 
+// aggregate stats for all devices
+static struct dmp_stats *global_stats;
+
 static struct kset *stats_kset;
 
 static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
@@ -86,6 +89,7 @@ static int dmp_map(struct dm_target *ti, struct bio *bio)
 
 	bio_set_dev(bio, pc->dev->bdev);
 	update_stats(bio, pc->stats);
+	update_stats(bio, global_stats);
 
 	return DM_MAPIO_REMAPPED;
 }
@@ -109,13 +113,21 @@ static int __init dmp_init(void)
 		return -ENOMEM;
 	}
 
+	global_stats = dmp_create_stats("all", stats_kset);
+	if (!global_stats) {
+		ret = -ENOMEM;
+		goto err_kset_unregister;
+	}
+
 	ret = dm_register_target(&dmp_target);
 	if (ret) {
-		goto err_kset_unregister;
+		goto err_destroy_stats;
 	}
 
 	return 0;
 
+err_destroy_stats:
+	dmp_destroy_stats(global_stats);
 err_kset_unregister:
 	kset_unregister(stats_kset);
 	return ret;
@@ -124,6 +136,7 @@ err_kset_unregister:
 static void __exit dmp_exit(void)
 {
 	dm_unregister_target(&dmp_target);
+	dmp_destroy_stats(global_stats);
 	kset_unregister(stats_kset);
 }
 
