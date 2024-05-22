@@ -54,14 +54,17 @@ static struct stats_attr write_reqs_attr = __ATTR_RO(write_reqs);
 ATTR_SHOW_NO_LOCK(total_reqs, stats->read_reqs + stats->write_reqs);
 static struct stats_attr total_reqs_attr = __ATTR_RO(total_reqs);
 
-#define DIV(x, y) (y == 0 ? 0 : x / y)
+static u64 safe_div(u64 x, u64 y)
+{
+	return y == 0 ? 0 : x / y;
+}
 
 // functions below require locking to return consistent state
 
 static ssize_t read_avg_size_show(struct dmp_stats *stats, char *buf)
 {
 	spin_lock(&stats->read_stats_lock);
-	u64 avg = DIV(stats->read_total_size, stats->read_reqs);
+	u64 avg = safe_div(stats->read_total_size, stats->read_reqs);
 	spin_unlock(&stats->read_stats_lock);
 
 	return sysfs_emit(buf, "%llu\n", avg);
@@ -71,7 +74,7 @@ static struct stats_attr read_avg_attr = __ATTR_RO(read_avg_size);
 static ssize_t write_avg_size_show(struct dmp_stats *stats, char *buf)
 {
 	spin_lock(&stats->write_stats_lock);
-	u64 avg = DIV(stats->write_total_size, stats->write_reqs);
+	u64 avg = safe_div(stats->write_total_size, stats->write_reqs);
 	spin_unlock(&stats->write_stats_lock);
 
 	return sysfs_emit(buf, "%llu\n", avg);
@@ -83,8 +86,8 @@ static ssize_t total_avg_size_show(struct dmp_stats *stats, char *buf)
 	spin_lock(&stats->read_stats_lock);
 	spin_lock(&stats->write_stats_lock);
 
-	u64 avg = DIV(stats->read_total_size + stats->write_total_size,
-		      stats->read_reqs + stats->write_reqs);
+	u64 avg = safe_div(stats->read_total_size + stats->write_total_size,
+			   stats->read_reqs + stats->write_reqs);
 
 	spin_unlock(&stats->write_stats_lock);
 	spin_unlock(&stats->read_stats_lock);
