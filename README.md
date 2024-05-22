@@ -40,7 +40,7 @@ For more information please refer to `dmsetup` manual.
 - Average size of write request
 - Average size of all read & write requests.
 
-This data is provided for each virtual device seperately as well as for all devices combined.
+This data is provided for each virtual device separately as well as for all devices combined.
 
 To access the stats provided please use `sysfs` interface as follows:
 ```bash
