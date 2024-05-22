@@ -1,7 +1,8 @@
 # dmp - device mapper proxy
 
-Linux [device mapper](https://en.wikipedia.org/wiki/Device_mapper) target.
-It proxies all I/O requests to underlying device, gathers statistics and provides them through `sysfs`.
+Linux Kernel module that adds a new [device mapper](https://en.wikipedia.org/wiki/Device_mapper) target - `dmp`.
+It allows to create virtual block devices over existing ones.
+`dmp` proxies all I/O requests to underlying device, gathers statistics and provides them through `sysfs` interface.
 
 ## Installation
 
