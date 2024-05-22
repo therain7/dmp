@@ -5,15 +5,18 @@
 
 #include <linux/kobject.h>
 #include <linux/types.h>
+#include <linux/spinlock_types.h>
 
 struct dmp_stats {
 	struct kobject kobj;
 
-	atomic64_t read_reqs;
-	atomic64_t read_total_size;
+	spinlock_t read_stats_lock;
+	u64 read_reqs; // amount of read requests submitted
+	u64 read_total_size; // total size of all read requests submitted
 
-	atomic64_t write_reqs;
-	atomic64_t write_total_size;
+	spinlock_t write_stats_lock;
+	u64 write_reqs; // amount of write requests submitted
+	u64 write_total_size; // total size of all write requests submitted
 };
 
 struct dmp_stats *dmp_create_stats(const char *name, struct kset *kset);

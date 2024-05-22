@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <linux/device-mapper.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/spinlock.h>
+
+#include <linux/device-mapper.h>
 #include <linux/bio.h>
-#include <linux/atomic/atomic-instrumented.h>
 
 #include "stats.h"
 
@@ -71,12 +72,20 @@ static void update_stats(struct bio *bio, struct dmp_stats *stats)
 	u32 size = bio->bi_iter.bi_size;
 	switch (bio_op(bio)) {
 	case REQ_OP_READ:
-		atomic64_inc(&stats->read_reqs);
-		atomic64_add(size, &stats->read_total_size);
+		spin_lock(&stats->read_stats_lock);
+
+		stats->read_reqs++;
+		stats->read_total_size += size;
+
+		spin_unlock(&stats->read_stats_lock);
 		break;
 	case REQ_OP_WRITE:
-		atomic64_inc(&stats->write_reqs);
-		atomic64_add(size, &stats->write_total_size);
+		spin_lock(&stats->write_stats_lock);
+
+		stats->write_reqs++;
+		stats->write_total_size += size;
+
+		spin_unlock(&stats->write_stats_lock);
 		break;
 	default:
 		break;

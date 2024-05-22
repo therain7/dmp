@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <linux/init.h>
-#include <linux/module.h>
-
 #include <linux/kobject.h>
 #include <linux/slab.h>
-#include <linux/atomic/atomic-instrumented.h>
+#include <linux/spinlock.h>
 
 #include "stats.h"
 
@@ -41,41 +38,68 @@ static const struct sysfs_ops stats_sysfs_ops = {
 	.store = stats_attr_store,
 };
 
-#define ATTR_SHOW(name, expr)                                          \
+// attr show functions that require no locking
+#define ATTR_SHOW_NO_LOCK(name, expr)                                  \
 	static ssize_t name##_show(struct dmp_stats *stats, char *buf) \
 	{                                                              \
-		return sysfs_emit(buf, "%lld\n", expr);                \
+		return sysfs_emit(buf, "%llu\n", expr);                \
 	}
 
-#define STATS_READ(field) atomic64_read(&stats->field)
-
-ATTR_SHOW(read_reqs, STATS_READ(read_reqs))
+ATTR_SHOW_NO_LOCK(read_reqs, stats->read_reqs);
 static struct stats_attr read_reqs_attr = __ATTR_RO(read_reqs);
 
-ATTR_SHOW(write_reqs, STATS_READ(write_reqs))
+ATTR_SHOW_NO_LOCK(write_reqs, stats->write_reqs);
 static struct stats_attr write_reqs_attr = __ATTR_RO(write_reqs);
 
-ATTR_SHOW(read_avg_size, STATS_READ(read_total_size) / STATS_READ(read_reqs))
-static struct stats_attr read_avg_size_attr = __ATTR_RO(read_avg_size);
-
-ATTR_SHOW(write_avg_size, STATS_READ(write_total_size) / STATS_READ(write_reqs))
-static struct stats_attr write_avg_size_attr = __ATTR_RO(write_avg_size);
-
-ATTR_SHOW(total_reqs, STATS_READ(read_reqs) + STATS_READ(write_reqs))
+ATTR_SHOW_NO_LOCK(total_reqs, stats->read_reqs + stats->write_reqs);
 static struct stats_attr total_reqs_attr = __ATTR_RO(total_reqs);
 
-ATTR_SHOW(total_avg_size,
-	  (STATS_READ(read_total_size) + STATS_READ(write_total_size)) /
-		  (STATS_READ(read_reqs) + STATS_READ(write_reqs)))
-static struct stats_attr total_avg_size_attr = __ATTR_RO(total_avg_size);
+#define DIV(x, y) (y == 0 ? 0 : x / y)
+
+// functions below require locking to return consistent state
+
+static ssize_t read_avg_size_show(struct dmp_stats *stats, char *buf)
+{
+	spin_lock(&stats->read_stats_lock);
+	u64 avg = DIV(stats->read_total_size, stats->read_reqs);
+	spin_unlock(&stats->read_stats_lock);
+
+	return sysfs_emit(buf, "%llu\n", avg);
+}
+static struct stats_attr read_avg_attr = __ATTR_RO(read_avg_size);
+
+static ssize_t write_avg_size_show(struct dmp_stats *stats, char *buf)
+{
+	spin_lock(&stats->write_stats_lock);
+	u64 avg = DIV(stats->write_total_size, stats->write_reqs);
+	spin_unlock(&stats->write_stats_lock);
+
+	return sysfs_emit(buf, "%llu\n", avg);
+}
+static struct stats_attr write_avg_attr = __ATTR_RO(write_avg_size);
+
+static ssize_t total_avg_size_show(struct dmp_stats *stats, char *buf)
+{
+	spin_lock(&stats->read_stats_lock);
+	spin_lock(&stats->write_stats_lock);
+
+	u64 avg = DIV(stats->read_total_size + stats->write_total_size,
+		      stats->read_reqs + stats->write_reqs);
+
+	spin_unlock(&stats->write_stats_lock);
+	spin_unlock(&stats->read_stats_lock);
+
+	return sysfs_emit(buf, "%llu\n", avg);
+}
+static struct stats_attr total_avg_attr = __ATTR_RO(total_avg_size);
 
 static struct attribute *stats_default_attrs[] = {
 	&read_reqs_attr.attr,
 	&write_reqs_attr.attr,
-	&read_avg_size_attr.attr,
-	&write_avg_size_attr.attr,
 	&total_reqs_attr.attr,
-	&total_avg_size_attr.attr,
+	&read_avg_attr.attr,
+	&write_avg_attr.attr,
+	&total_avg_attr.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(stats_default);
@@ -100,6 +124,9 @@ struct dmp_stats *dmp_create_stats(const char *name, struct kset *kset)
 	if (!stats)
 		return NULL;
 
+	spin_lock_init(&stats->read_stats_lock);
+	spin_lock_init(&stats->write_stats_lock);
+
 	stats->kobj.kset = kset;
 
 	ret = kobject_init_and_add(&stats->kobj, &stats_ktype, NULL, "%s",
@@ -120,5 +147,8 @@ err_kobj_put:
 
 void dmp_destroy_stats(struct dmp_stats *stats)
 {
+	if (!stats)
+		return;
+
 	kobject_put(&stats->kobj);
 }
