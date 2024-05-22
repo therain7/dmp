@@ -66,7 +66,7 @@ To access aggregate statistics for all devices use `all` as `$device_name`.
 
 ## Testing
 
-WIP
+The module was thoroughly tested manually. See [TESTING](TESTING.md) for more information. 
 
 ## License
 
